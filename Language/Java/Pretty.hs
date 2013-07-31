@@ -184,7 +184,7 @@ instance Pretty Block where
   prettyPrec p (Block stmts) = braceBlock $ map (prettyPrec p) stmts
 
 instance Pretty BlockStmt where
-  prettyPrec p (BlockStmt stmt) = prettyPrec p stmt
+  prettyPrec p (BlockStmt stmt) = prettyPrec 0 stmt
   prettyPrec p (LocalClass cd) = prettyPrec p cd
   prettyPrec p (LocalVars mods t vds) =
     hsep (map (prettyPrec p) mods) <+> prettyPrec p t <+> 
