@@ -355,7 +355,7 @@ instance Pretty Exp where
                    <+> prettyPrec p th <+> colon <+> prettyPrec 13 el
 
   prettyPrec p (Assign lhs aop e) =
-    hsep [prettyPrec p lhs, prettyPrec p aop, prettyPrec p e]
+    parenPrec p 14 $ hsep [prettyPrec p lhs, prettyPrec p aop, prettyPrec p e]
 
 
 instance Pretty Literal where
