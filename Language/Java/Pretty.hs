@@ -16,6 +16,11 @@ parenPrec inheritedPrec currentPrec t
 	| inheritedPrec < currentPrec = parens t
 	| otherwise                   = t
 
+parenRightAssoc :: Op -> Exp -> Doc -> Doc
+parenRightAssoc op (BinOp _ op' _) t 
+         | not (opRightAssoc op) && opPrec op == opPrec op'  = parens t
+parenRightAssoc _ _ t                                        = t
+
 class Pretty a where
   pretty :: a -> Doc
   pretty = prettyPrec 0
@@ -343,7 +348,7 @@ instance Pretty Exp where
   
   prettyPrec p (BinOp e1 op e2) =
     let prec = opPrec op in
-    parenPrec p prec (prettyPrec prec e1 <+> prettyPrec p op <+> prettyPrec prec e2)
+    parenPrec p prec (prettyPrec prec e1 <+> prettyPrec p op <+> parenRightAssoc op e2 (prettyPrec prec e2))
 
   prettyPrec p (InstanceOf e rt) =
     let cp = opPrec LThan in
@@ -568,3 +573,25 @@ opPrec Xor     = 9
 opPrec Or      = 10
 opPrec CAnd    = 11
 opPrec COr     = 12
+
+-- If x op y op z == x op (y op z), then opRightAssoc op == True
+-- This does not take into account the imprecision of floating-point ops
+opRightAssoc Mult    = True
+opRightAssoc Div     = False
+opRightAssoc Rem     = False
+opRightAssoc Add     = True
+opRightAssoc Sub     = False
+opRightAssoc LShift  = False
+opRightAssoc RShift  = False
+opRightAssoc RRShift = False
+opRightAssoc LThan   = False
+opRightAssoc GThan   = False
+opRightAssoc LThanE  = False
+opRightAssoc GThanE  = False
+opRightAssoc Equal   = False
+opRightAssoc NotEq   = False
+opRightAssoc And     = False
+opRightAssoc Xor     = False
+opRightAssoc Or      = False
+opRightAssoc CAnd    = False
+opRightAssoc COr     = False
