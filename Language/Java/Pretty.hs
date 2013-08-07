@@ -6,7 +6,6 @@ import Data.List (intersperse)
 
 import Language.Java.Syntax
 
-
 prettyPrint :: Pretty a => a -> String
 prettyPrint = show . pretty
 
@@ -16,9 +15,18 @@ parenPrec inheritedPrec currentPrec t
 	| inheritedPrec < currentPrec = parens t
 	| otherwise                   = t
 
+
+{-
+- This function can be easily modified to only add parens
+- when the operator is not right-associative, i.e.: output
+- x+y+z instead of x+(y+z). However, for floating-point ops,
+- no operator is right-associative, and some programs do break
+- if these are confused. However, if we only print x+(y+z) if
+- this parenthesization was present in the original program.
+-}
 parenRightAssoc :: Op -> Exp -> Doc -> Doc
 parenRightAssoc op (BinOp _ op' _) t 
-         | not (opRightAssoc op) && opPrec op == opPrec op'  = parens t
+         | opPrec op == opPrec op'  = parens t
 parenRightAssoc _ _ t                                        = t
 
 class Pretty a where
@@ -573,25 +581,3 @@ opPrec Xor     = 9
 opPrec Or      = 10
 opPrec CAnd    = 11
 opPrec COr     = 12
-
--- If x op y op z == x op (y op z), then opRightAssoc op == True
--- This does not take into account the imprecision of floating-point ops
-opRightAssoc Mult    = True
-opRightAssoc Div     = False
-opRightAssoc Rem     = False
-opRightAssoc Add     = True
-opRightAssoc Sub     = False
-opRightAssoc LShift  = False
-opRightAssoc RShift  = False
-opRightAssoc RRShift = False
-opRightAssoc LThan   = False
-opRightAssoc GThan   = False
-opRightAssoc LThanE  = False
-opRightAssoc GThanE  = False
-opRightAssoc Equal   = False
-opRightAssoc NotEq   = False
-opRightAssoc And     = False
-opRightAssoc Xor     = False
-opRightAssoc Or      = False
-opRightAssoc CAnd    = False
-opRightAssoc COr     = False
