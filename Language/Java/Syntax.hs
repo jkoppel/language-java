@@ -1,5 +1,7 @@
-{-# LANGUAGE CPP, DeriveDataTypeable #-}
+{-# LANGUAGE CPP, DeriveDataTypeable, TemplateHaskell #-}
 module Language.Java.Syntax where
+
+import Control.DeepSeq.TH
 
 import Data.Data
 
@@ -13,7 +15,6 @@ import Data.Data
 data CompilationUnit = CompilationUnit (Maybe PackageDecl) [ImportDecl] [TypeDecl]
   DERIVE
 
-
 -- | A package declaration appears within a compilation unit to indicate the package to which the compilation unit belongs.
 data PackageDecl = PackageDecl Name
   DERIVE
@@ -25,7 +26,6 @@ data PackageDecl = PackageDecl Name
 data ImportDecl
     = ImportDecl Bool {- static? -} Name Bool {- .*? -}
   DERIVE
-
 
 -----------------------------------------------------------------------
 -- Declarations
@@ -77,7 +77,6 @@ data Decl
     | InitDecl Bool Block
   DERIVE
 
-
 -- | A class or interface member can be an inner class or interface, a field or
 --   constant, or a method or constructor. An interface may only have as members
 --   constants (not fields), abstract methods, and no constructors.
@@ -93,7 +92,6 @@ data MemberDecl
     -- | A member interface is an interface whose declaration is directly enclosed in another class or interface declaration.
     | MemberInterfaceDecl InterfaceDecl
   DERIVE
-
 
 -- | A declaration of a variable, which may be explicitly initialized.
 data VarDecl
@@ -138,7 +136,6 @@ data ExplConstrInv
     | SuperInvoke            [RefType] [Argument]
     | PrimarySuperInvoke Exp [RefType] [Argument]
   DERIVE
-
 
 -- | A modifier specifying properties of a given declaration. In general only
 --   a few of these modifiers are allowed for each declaration type, for instance
@@ -477,3 +474,52 @@ data Ident = Ident String
 -- | A name, i.e. a period-separated list of identifiers.
 data Name = Name [Ident]
   DERIVE
+
+
+$(deriveNFData ''CompilationUnit)
+$(deriveNFData ''PackageDecl)
+$(deriveNFData ''ImportDecl)
+$(deriveNFData ''TypeDecl)
+$(deriveNFData ''ClassDecl)
+$(deriveNFData ''ClassBody)
+$(deriveNFData ''EnumBody)
+$(deriveNFData ''EnumConstant)
+$(deriveNFData ''InterfaceDecl)
+$(deriveNFData ''InterfaceBody)
+$(deriveNFData ''Decl)
+$(deriveNFData ''MemberDecl)
+$(deriveNFData ''VarDecl)
+$(deriveNFData ''VarDeclId)
+$(deriveNFData ''VarInit)
+$(deriveNFData ''FormalParam)
+$(deriveNFData ''MethodBody)
+$(deriveNFData ''ConstructorBody)
+$(deriveNFData ''ExplConstrInv)
+$(deriveNFData ''Modifier)
+$(deriveNFData ''Annotation)
+$(deriveNFData ''ElementValue)
+$(deriveNFData ''Block)
+$(deriveNFData ''BlockStmt)
+$(deriveNFData ''Stmt)
+$(deriveNFData ''Catch)
+$(deriveNFData ''SwitchBlock)
+$(deriveNFData ''SwitchLabel)
+$(deriveNFData ''ForInit)
+$(deriveNFData ''Exp)
+$(deriveNFData ''Literal)
+$(deriveNFData ''Op)
+$(deriveNFData ''AssignOp)
+$(deriveNFData ''Lhs)
+$(deriveNFData ''ArrayIndex)
+$(deriveNFData ''FieldAccess)
+$(deriveNFData ''MethodInvocation)
+$(deriveNFData ''ArrayInit)
+$(deriveNFData ''Type)
+$(deriveNFData ''RefType)
+$(deriveNFData ''ClassType)
+$(deriveNFData ''TypeArgument)
+$(deriveNFData ''WildcardBound)
+$(deriveNFData ''PrimType)
+$(deriveNFData ''TypeParam)
+$(deriveNFData ''Name)
+$(deriveNFData ''Ident)
