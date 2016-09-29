@@ -38,7 +38,7 @@ import Language.Java.Pretty (pretty)
 import Text.Parsec hiding ( Empty )
 import Text.Parsec.Pos
 
-import Prelude hiding ( exp, catch, (>>), (>>=) )
+import Prelude hiding ( exp, catch, (>>), (>>=), (<*>) )
 import qualified Prelude as P ( (>>), (>>=) )
 import Data.Maybe ( isJust, catMaybes )
 import Control.Monad ( ap )
