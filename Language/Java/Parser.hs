@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Language.Java.Parser (
     parser,
 
@@ -19,6 +20,8 @@ module Language.Java.Parser (
     stmtExp, exp, primary, literal,
 
     ttype, primType, refType, classType, resultType,
+
+    lambdaExp, methodRef,
 
     typeParams, typeParam,
 
@@ -42,7 +45,16 @@ import Prelude hiding ( exp, catch, (>>), (>>=), (<*>) )
 import qualified Prelude as P ( (>>), (>>=) )
 import Data.Maybe ( isJust, catMaybes )
 import Control.Monad ( ap )
+
+#if __GLASGOW_HASKELL__ < 707
 import Control.Applicative ( (<$>), (<$), (<*) )
+-- Since I cba to find the instance Monad m => Applicative m declaration.
+(<*>) :: Monad m => m (a -> b) -> m a -> m b
+(<*>) = ap
+infixl 4 <*>
+#else
+import Control.Applicative ( (<$>), (<$), (<*), (<*>) )
+#endif
 
 type P = Parsec [L Token] ()
 
@@ -54,11 +66,6 @@ type P = Parsec [L Token] ()
 infixr 2 >>, >>=
 -- Note also when reading that <$> is infixl 4 and thus has
 -- lower precedence than all the others (>>, >>=, and <|>).
-
--- Since I cba to find the instance Monad m => Applicative m declaration.
-(<*>) :: Monad m => m (a -> b) -> m a -> m b
-(<*>) = ap
-infixl 4 <*>
 
 ----------------------------------------------------------------------------
 -- Top-level parsing
@@ -145,7 +152,7 @@ enumClassDecl = do
     return $ \ms -> EnumDecl ms i imp bod
 
 classBody :: P ClassBody
-classBody = ClassBody <$> braces classBodyDecls
+classBody = ClassBody <$> braces classBodyStatements
 
 enumBody :: P EnumBody
 enumBody = braces $ do
@@ -162,10 +169,10 @@ enumConst = do
     return $ EnumConstant id as mcb
 
 enumBodyDecls :: P [Decl]
-enumBodyDecls = semiColon >> classBodyDecls
+enumBodyDecls = semiColon >> classBodyStatements
 
-classBodyDecls :: P [Decl]
-classBodyDecls = list classBodyDecl
+classBodyStatements :: P [Decl]
+classBodyStatements = catMaybes <$> list classBodyStatement
 
 -- Interface declarations
 
@@ -184,15 +191,18 @@ interfaceBody = InterfaceBody . catMaybes <$>
 
 -- Declarations
 
-classBodyDecl :: P Decl
-classBodyDecl =
+classBodyStatement :: P (Maybe Decl)
+classBodyStatement =
     (try $ do
-        mst <- bopt (tok KW_Static)
-        blk <- block
-        return $ InitDecl mst blk) <|>
+       list1 semiColon
+       return Nothing) <|>
+    (try $ do
+       mst <- bopt (tok KW_Static)
+       blk <- block
+       return $ Just $ InitDecl mst blk) <|>
     (do ms  <- list modifier
         dec <- memberDecl
-        return $ MemberDecl (dec ms))
+        return $ Just $ MemberDecl (dec ms))
 
 memberDecl :: P (Mod MemberDecl)
 memberDecl =
@@ -594,8 +604,10 @@ stmtExp = try preIncDec
     <|> try postIncDec
     <|> try assignment
     -- There are sharing gains to be made by unifying these two
-    <|> try instanceCreation
-    <|> methodInvocationExp
+    <|> try methodInvocationExp
+    <|> try lambdaExp
+    <|> try methodRef
+    <|> instanceCreation
 
 preIncDec :: P Exp
 preIncDec = do
@@ -627,7 +639,7 @@ exp :: P Exp
 exp = assignExp
 
 assignExp :: P Exp
-assignExp = try assignment <|> condExp
+assignExp = try methodRef <|> try lambdaExp <|> try assignment <|> condExp
 
 condExp :: P Exp
 condExp = do
@@ -720,10 +732,28 @@ instanceCreationNPS :: P Exp
 instanceCreationNPS =
     do tok KW_New
        tas <- lopt typeArgs
-       ct  <- classType
+       tds <- typeDeclSpecifier
        as  <- args
        mcb <- opt classBody
-       return $ InstanceCreation tas ct as mcb
+       return $ InstanceCreation tas tds as mcb
+
+typeDeclSpecifier :: P TypeDeclSpecifier
+typeDeclSpecifier =
+    (try $ do ct <- classType
+              period
+              i <- ident
+              tok Op_LThan
+              tok Op_GThan
+              return $ TypeDeclSpecifierWithDiamond ct i Diamond
+    ) <|>
+    (try $ do i <- ident
+              tok Op_LThan
+              tok Op_GThan
+              return $ TypeDeclSpecifierUnqualifiedWithDiamond i Diamond
+    ) <|>
+    (do ct <- classType
+        return $ TypeDeclSpecifier ct
+    )
 
 instanceCreationSuffix :: P (Exp -> Exp)
 instanceCreationSuffix =
@@ -742,6 +772,23 @@ instanceCreation = try instanceCreationNPS <|> do
     case icp of
      QualInstanceCreation {} -> return icp
      _ -> fail ""
+
+
+lambdaParams :: P LambdaParams
+lambdaParams = try (LambdaSingleParam <$> ident)
+               <|> try (parens $ LambdaFormalParams <$> (seplist formalParam comma))
+               <|> (parens $ LambdaInferredParams <$> (seplist ident comma))
+
+lambdaExp :: P Exp
+lambdaExp = Lambda 
+            <$> (lambdaParams <* (tok LambdaArrow))
+            <*> ((LambdaBlock <$> (try block))
+                 <|> (LambdaExpression <$> exp))
+
+methodRef :: P Exp
+methodRef = MethodRef 
+            <$> (name <*  (tok MethodRefSep))
+            <*> ident
 
 {-
 instanceCreation =
@@ -882,12 +929,12 @@ args = parens $ seplist exp comma
 arrayAccessNPS :: P ArrayIndex
 arrayAccessNPS = do
     n <- name
-    e <- brackets exp
+    e <- list1 $ brackets exp
     return $ ArrayIndex (ExpName n) e
 
 arrayAccessSuffix :: P (Exp -> ArrayIndex)
 arrayAccessSuffix = do
-    e <- brackets exp
+    e <- list1 $ brackets exp
     return $ \ref -> ArrayIndex ref e
 
 arrayAccess = try arrayAccessNPS <|> do
@@ -917,7 +964,7 @@ arrayCreation = do
              ds <- list1 $ brackets empty
              ai <- arrayInit
              return $ \t -> ArrayCreateInit t (length ds) ai) <|>
-         (do des <- list1 $ brackets exp
+         (do des <- list1 $ try $ brackets exp
              ds  <- list  $ brackets empty
              return $ \t -> ArrayCreate t des (length ds))
     return $ f t
@@ -973,10 +1020,19 @@ infixOp =
     (tok Op_Plus    >> return Add       ) <|>
     (tok Op_Minus   >> return Sub       ) <|>
     (tok Op_LShift  >> return LShift    ) <|>
-    (tok Op_RShift  >> return RShift    ) <|>
-    (tok Op_RRShift >> return RRShift   ) <|>
     (tok Op_LThan   >> return LThan     ) <|>
-    (tok Op_GThan   >> return GThan     ) <|>
+    (try $ do
+       tok Op_GThan   
+       tok Op_GThan   
+       tok Op_GThan
+       return RRShift   ) <|>
+           
+    (try $ do
+       tok Op_GThan 
+       tok Op_GThan
+       return RShift    ) <|>
+           
+    (tok Op_GThan   >> return GThan     ) <|>                                          
     (tok Op_LThanE  >> return LThanE    ) <|>
     (tok Op_GThanE  >> return GThanE    ) <|>
     (tok Op_Equals  >> return Equal     ) <|>

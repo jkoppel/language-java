@@ -1,12 +1,11 @@
 {
 {-# LANGUAGE BangPatterns #-}
+{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-binds #-}
 module Language.Java.Lexer (L(..), Token(..), lexer) where
 
 import Numeric
 import Data.Char
 import Data.Int
-
-import Debug.Trace (trace)
 }
 
 %wrapper "posn"
@@ -130,6 +129,8 @@ tokens  :-
     \;              { \p _ -> L (pos p) $ SemiColon       }
     \,              { \p _ -> L (pos p) $ Comma           }
     \.              { \p _ -> L (pos p) $ Period          }
+    "->"            { \p _ -> L (pos p) $ LambdaArrow     }
+    "::"            { \p _ -> L (pos p) $ MethodRefSep    }
 
     "="             { \p _ -> L (pos p) $ Op_Equal        }
     ">"             { \p _ -> L (pos p) $ Op_GThan        }
@@ -155,8 +156,6 @@ tokens  :-
     "^"             { \p _ -> L (pos p) $ Op_Caret        }
     "%"             { \p _ -> L (pos p) $ Op_Percent      }
     "<<"            { \p _ -> L (pos p) $ Op_LShift       }
-    ">>"            { \p _ -> L (pos p) $ Op_RShift       }
-    ">>>"           { \p _ -> L (pos p) $ Op_RRShift      }
     "+="            { \p _ -> L (pos p) $ Op_PlusE        }
     "-="            { \p _ -> L (pos p) $ Op_MinusE       }
     "*="            { \p _ -> L (pos p) $ Op_StarE        }
@@ -181,17 +180,18 @@ toJavaLong x = fromIntegral (fromIntegral x :: Int64)
 
 pickyReadOct :: String -> Integer
 pickyReadOct s =
-  if not $ null rem
-  then lexicalError $ "Non-octal digit '" ++ take 1 rem ++ "' in \"" ++ s ++ "\"."
+  if not $ null remStr
+  then lexicalError $ "Non-octal digit '" ++ take 1 remStr ++ "' in \"" ++ s ++ "\"."
   else n
-    where (n,rem) = head $ readOct s
+    where (n,remStr) = head $ readOct s
 
 readHexExp :: (Floating a, Eq a) => String -> a
-readHexExp s = let (m, suf) = head $ readHex s
-                   (e, _) = case suf of
-                             p:s | toLower p == 'p' -> head $ readHex s
-                             _ -> (0, "")
-                in m ** e
+readHexExp initial =
+    let (m, suf) = head $ readHex initial
+        (e, _) = case suf of
+                      p:s | toLower p == 'p' -> head $ readHex s
+                      _                      -> (0, "")
+     in m ** e
 
 readCharTok :: String -> Char
 readCharTok s = head . convChar . dropQuotes $ s
@@ -319,6 +319,8 @@ data Token
     | SemiColon
     | Comma
     | Period
+    | LambdaArrow
+    | MethodRefSep
 
     -- Literals
     | IntTok  Integer
@@ -358,8 +360,6 @@ data Token
     | Op_Caret
     | Op_Percent
     | Op_LShift
-    | Op_RShift
-    | Op_RRShift
     | Op_PlusE
     | Op_MinusE
     | Op_StarE
