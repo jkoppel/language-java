@@ -1,7 +1,7 @@
 language-java 
 =============
 
-[![Build Status](https://travis-ci.org/vincenthz/language-java.png?branch=master)](https://travis-ci.org/vincenthz/language-java)
+[![Build Status](https://travis-ci.org/dvekeman/language-java.png?branch=fixes/upstream_0.2.8)](https://travis-ci.org/dvekeman/language-java)
 [![BSD](http://b.repl.ca/v1/license-BSD-blue.png)](http://en.wikipedia.org/wiki/BSD_licenses)
 [![Haskell](http://b.repl.ca/v1/language-haskell-lightgrey.png)](http://haskell.org)
 
