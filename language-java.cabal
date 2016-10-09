@@ -54,4 +54,5 @@ Test-Suite test-java-parse
                    , language-java
                    , filepath
                    , directory
+                   , QuickCheck
   ghc-options:       -Wall -fno-warn-orphans -fno-warn-missing-signatures

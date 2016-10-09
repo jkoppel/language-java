@@ -5,6 +5,8 @@ import Test.Tasty
 import Test.Tasty.QuickCheck
 import Test.Tasty.HUnit
 
+import Test.QuickCheck
+
 import System.Directory
 import System.FilePath
 
@@ -16,6 +18,8 @@ import Language.Java.Parser
 import Language.Java.Syntax
 import Language.Java.Pretty
 import qualified Control.Exception as E
+
+import Prelude hiding (exp)
 
 instance Arbitrary CompilationUnit where
     arbitrary = CompilationUnit <$> arbitrary <*> arbitrary <*> ((:[]) <$> arbitrary)
@@ -31,6 +35,19 @@ instance Arbitrary ClassBody where
     arbitrary = ClassBody <$> pure []
 instance Arbitrary Name where
     arbitrary = Name <$> (choose (1,3) >>= \len -> replicateM len arbitrary)
+instance Arbitrary Exp where
+    arbitrary = oneof [
+                        BinOp <$> arbitrary <*> arbitrary <*> arbitrary,
+                	liftM Lit arbitrary
+                      ]
+instance Arbitrary Literal where
+    arbitrary = oneof [Int <$> arbitrary, 
+                       String <$> (choose (1,10) >>= \len -> replicateM len arbitrary)
+                       --TODO: others
+                      ]
+                      
+instance Arbitrary Op where
+    arbitrary = pure Mult --TODO: FIXME
 instance Arbitrary Ident where
     arbitrary = Ident . unkeyword <$> (choose (1,15) >>= \len -> replicateM len (elements (['a'..'z'] ++ ['A'..'Z'])))
       where unkeyword k
@@ -53,6 +70,14 @@ toTestCase expected jFile = testCase (takeBaseName jFile) doTest
         parseOne = parser compilationUnit <$> readFile jFile
 
 getAllJavaPaths path = map (path </>) . filter isJavaFile <$> getDirectoryContents path
+
+prop_ParsePretty :: CompilationUnit -> Bool
+prop_ParsePretty cu = (parser compilationUnit (showPretty cu) == Right cu)
+  where showPretty = show . pretty
+
+prop_ParsePrettyExp :: Exp -> Bool
+prop_ParsePrettyExp expr = (parser exp (showPretty expr) == Right expr)
+  where showPretty = show . pretty
 
 main = do
     exists <- doesDirectoryExist testJavaDirectory
