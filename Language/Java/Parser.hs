@@ -901,7 +901,7 @@ methodInvocationSuffix = do
         rts <- lopt refTypeArgs
         i   <- ident
         as  <- args
-        return $ \p -> PrimaryMethodCall p [] i as
+        return $ \p -> PrimaryMethodCall p rts i as
 
 methodInvocationExp :: P Exp
 methodInvocationExp = try (do
