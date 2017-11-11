@@ -1,6 +1,7 @@
 module Language.Java.Pretty where
 
 import Text.PrettyPrint
+import Text.Printf (printf)
 import Data.Char (toLower)
 import Data.List (intersperse)
 
@@ -11,9 +12,9 @@ prettyPrint = show . pretty
 
 parenPrec :: Int -> Int -> Doc -> Doc
 parenPrec inheritedPrec currentPrec t
-        | inheritedPrec <= 0          = t
-	| inheritedPrec < currentPrec = parens t
-	| otherwise                   = t
+    | inheritedPrec <= 0          = t
+    | inheritedPrec < currentPrec = parens t
+    | otherwise                   = t
 
 
 {-
@@ -94,9 +95,9 @@ instance Pretty EnumConstant where
       $$ maybePP p mBody
 
 instance Pretty InterfaceDecl where
-  prettyPrec p (InterfaceDecl mods ident tParams impls body) =
+  prettyPrec p (InterfaceDecl kind mods ident tParams impls body) =
     hsep [hsep (map (prettyPrec p) mods)
-          , text "interface"
+          , text (if kind == InterfaceNormal then "interface" else "@interface")
           , prettyPrec p ident
           , ppTypeParams p tParams
           , ppExtends p impls
@@ -115,13 +116,14 @@ instance Pretty MemberDecl where
   prettyPrec p (FieldDecl mods t vds) =
     hsep (map (prettyPrec p) mods ++ prettyPrec p t:punctuate (text ",") (map (prettyPrec p) vds)) <> semi
 
-  prettyPrec p (MethodDecl mods tParams mt ident fParams throws body) =
+  prettyPrec p (MethodDecl mods tParams mt ident fParams throws def body) =
     hsep [hsep (map (prettyPrec p) mods)
           , ppTypeParams p tParams
           , ppResultType p mt
           , prettyPrec p ident
           , ppArgs p fParams
           , ppThrows p throws
+          , ppDefault p def
          ] $$ prettyPrec p body
 
   prettyPrec p (ConstructorDecl mods tParams ident fParams throws body) =
@@ -138,7 +140,7 @@ instance Pretty MemberDecl where
 instance Pretty VarDecl where
   prettyPrec p (VarDecl vdId Nothing) = prettyPrec p vdId
   prettyPrec p (VarDecl vdId (Just ie)) =
-	(prettyPrec p vdId <+> char '=') <+> prettyPrec p ie
+    (prettyPrec p vdId <+> char '=') <+> prettyPrec p ie
 
 instance Pretty VarDeclId where
   prettyPrec p (VarId ident) = prettyPrec p ident
@@ -147,7 +149,7 @@ instance Pretty VarDeclId where
 instance Pretty VarInit where
   prettyPrec p (InitExp e) = prettyPrec p e
   prettyPrec p (InitArray (ArrayInit ai)) =
-	text "{" <+> hsep (punctuate comma (map (prettyPrec p) ai)) <+> text "}"
+    text "{" <+> hsep (punctuate comma (map (prettyPrec p) ai)) <+> text "}"
 
 instance Pretty FormalParam where
   prettyPrec p (FormalParam mods t b vId) =
@@ -174,7 +176,7 @@ instance Pretty ExplConstrInv where
 
 instance Pretty Modifier where
   prettyPrec p (Annotation ann) = prettyPrec p ann $+$ nest (-1) ( text "")
-  prettyPrec p Synchronised = text "synchronized"
+  prettyPrec p Synchronized_ = text "synchronized"
   prettyPrec p mod = text . map toLower $ show mod
 
 instance Pretty Annotation where
@@ -306,10 +308,10 @@ instance Pretty Exp where
   prettyPrec p (ThisClass name) =
     prettyPrec p name <> text ".this"
     
-  prettyPrec p (InstanceCreation tArgs ct args mBody) =
+  prettyPrec p (InstanceCreation tArgs tds args mBody) =
     hsep [text "new" 
           , ppTypeParams p tArgs 
-          , prettyPrec p ct <> ppArgs p args
+          , prettyPrec p tds <> ppArgs p args
          ] $$ maybePP p mBody
   
   prettyPrec p (QualInstanceCreation e tArgs ident args mBody) =
@@ -370,6 +372,20 @@ instance Pretty Exp where
   prettyPrec p (Assign lhs aop e) =
     parenPrec p 14 $ hsep [prettyPrec p lhs, prettyPrec p aop, prettyPrec p e]
 
+  prettyPrec p (Lambda params body) =
+    prettyPrec p params <+> text "->" <+> prettyPrec p body
+
+  prettyPrec p (MethodRef i1 i2) =
+    prettyPrec p i1 <+> text "::" <+> prettyPrec p i2
+
+instance Pretty LambdaParams where
+  prettyPrec p (LambdaSingleParam ident) = prettyPrec p ident
+  prettyPrec p (LambdaFormalParams params) = ppArgs p params
+  prettyPrec p (LambdaInferredParams idents) = ppArgs p idents
+
+instance Pretty LambdaExpression where
+  prettyPrec p (LambdaExpression exp) = prettyPrec p exp
+  prettyPrec p (LambdaBlock block) = prettyPrec p block
 
 instance Pretty Literal where
   prettyPrec p (Int i) = text (show i)
@@ -377,8 +393,8 @@ instance Pretty Literal where
   prettyPrec p (Float f) = text (show f) <> char 'F'
   prettyPrec p (Double d) = text (show d)
   prettyPrec p (Boolean b) = text . map toLower $ show b
-  prettyPrec p (Char c) = text "'" <> text (ppChar c) <> text "'"
-  prettyPrec p (String s) = text "\"" <> text (concatMap ppChar s) <> text "\""
+  prettyPrec p (Char c) = quotes $ text (escapeChar c)
+  prettyPrec p (String s) = doubleQuotes $ text (concatMap escapeString s)
   prettyPrec p (Null) = text "null"
 
 instance Pretty Op where
@@ -424,7 +440,7 @@ instance Pretty Lhs where
   prettyPrec p (ArrayLhs ain) = prettyPrec p ain
 
 instance Pretty ArrayIndex where
-  prettyPrec p (ArrayIndex ref e) = prettyPrec p ref <> brackets (prettyPrec p e)
+  prettyPrec p (ArrayIndex ref e) = prettyPrec p ref <> (hcat $ map (brackets . (prettyPrec p)) e)
 
 instance Pretty FieldAccess where
   prettyPrec p (PrimaryFieldAccess e ident) =
@@ -432,7 +448,7 @@ instance Pretty FieldAccess where
   prettyPrec p (SuperFieldAccess ident) =
     text "super." <> prettyPrec p ident
   prettyPrec p (ClassFieldAccess name ident) =
-    prettyPrec p name <> text ".super." <> prettyPrec p ident
+    prettyPrec p name <> text "." <> prettyPrec p ident
 
 instance Pretty MethodInvocation where
   prettyPrec p (MethodCall name args) =
@@ -483,6 +499,14 @@ instance Pretty TypeArgument where
   prettyPrec p (ActualType rt) = prettyPrec p rt
   prettyPrec p (Wildcard mBound) = char '?' <+> maybePP p mBound
 
+instance Pretty TypeDeclSpecifier where
+  prettyPrec p (TypeDeclSpecifier ct) = prettyPrec p ct
+  prettyPrec p (TypeDeclSpecifierWithDiamond ct i d) =  prettyPrec p ct <> char '.' <> prettyPrec p i <> prettyPrec p d
+  prettyPrec p (TypeDeclSpecifierUnqualifiedWithDiamond i d) = prettyPrec p i <> prettyPrec p d
+
+instance Pretty Diamond where
+  prettyPrec p Diamond = text "<>"
+
 instance Pretty WildcardBound where
   prettyPrec p (ExtendsBound rt) = text "extends" <+> prettyPrec p rt
   prettyPrec p (SuperBound   rt) = text "super"   <+> prettyPrec p rt
@@ -524,6 +548,10 @@ ppThrows :: Int -> [ExceptionType] -> Doc
 ppThrows _ [] = empty
 ppThrows p ets = text "throws" 
     <+> hsep (punctuate comma (map (prettyPrec p) ets))
+
+ppDefault :: Int -> Maybe Exp -> Doc
+ppDefault _ Nothing = empty
+ppDefault p (Just exp) = text "default" <+> prettyPrec p exp
 
 ppResultType :: Int -> Maybe Type -> Doc
 ppResultType _ Nothing = text "void"
@@ -581,3 +609,26 @@ opPrec Xor     = 9
 opPrec Or      = 10
 opPrec CAnd    = 11
 opPrec COr     = 12
+
+escapeGeneral :: Char -> String
+escapeGeneral '\b' = "\\b"
+escapeGeneral '\t' = "\\t"
+escapeGeneral '\n' = "\\n"
+escapeGeneral '\f' = "\\f"
+escapeGeneral '\r' = "\\r"
+escapeGeneral '\\' = "\\\\"
+escapeGeneral c | c >= ' ' && c < '\DEL' = [c]
+                | c <= '\xFFFF' = printf "\\u%04x" (fromEnum c)
+                | otherwise = error $ "Language.Java.Pretty.escapeGeneral: Char " ++ show c ++ " too large for Java char"
+
+escapeChar :: Char -> String
+escapeChar '\'' = "\\'"
+escapeChar c = escapeGeneral c
+
+escapeString :: Char -> String
+escapeString '"' = "\\\""
+escapeString c | c <= '\xFFFF' = escapeGeneral c
+               | otherwise = escapeGeneral lead ++ escapeGeneral trail
+                   where c' = fromEnum c - 0x010000
+                         lead = toEnum $ 0xD800 + c' `div` 0x0400
+                         trail = toEnum $ 0xDC00 + c' `mod` 0x0400

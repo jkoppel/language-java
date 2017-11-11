@@ -1,11 +1,56 @@
-{-# LANGUAGE CPP, DeriveDataTypeable, TemplateHaskell #-}
-module Language.Java.Syntax where
-
-import Control.DeepSeq.TH
+{-# LANGUAGE TemplateHaskell, DeriveGeneric, DeriveDataTypeable #-}
+module Language.Java.Syntax
+    ( CompilationUnit(..)
+    , PackageDecl(..)
+    , ImportDecl(..)
+    , TypeDecl(..)
+    , ClassDecl(..)
+    , ClassBody(..)
+    , EnumBody(..)
+    , EnumConstant(..)
+    , InterfaceDecl(..)
+    , InterfaceBody(..)
+    , InterfaceKind(..)
+    , Decl(..)
+    , MemberDecl(..)
+    , VarDecl(..)
+    , VarDeclId(..)
+    , VarInit(..)
+    , FormalParam(..)
+    , MethodBody(..)
+    , ConstructorBody(..)
+    , ExplConstrInv(..)
+    , Modifier(..)
+    , Annotation(..)
+    , desugarAnnotation
+    , desugarAnnotation'
+    , ElementValue(..)
+    , Block(..)
+    , BlockStmt(..)
+    , Stmt(..)
+    , Catch(..)
+    , SwitchBlock(..)
+    , SwitchLabel(..)
+    , ForInit(..)
+    , ExceptionType
+    , Argument
+    , Exp(..)
+    , Lhs(..)
+    , ArrayIndex(..)
+    , FieldAccess(..)
+    , LambdaParams(..)
+    , LambdaExpression(..)
+    , ArrayInit(..)
+    , MethodInvocation(..)
+    , module Language.Java.Syntax.Exp
+    , module Language.Java.Syntax.Types
+    ) where
 
 import Data.Data
+import GHC.Generics (Generic)
 
-#define DERIVE deriving (Eq,Ord,Read,Show,Typeable,Data)
+import Language.Java.Syntax.Types
+import Language.Java.Syntax.Exp
 
 -----------------------------------------------------------------------
 -- Packages
@@ -13,11 +58,11 @@ import Data.Data
 
 -- | A compilation unit is the top level syntactic goal symbol of a Java program.
 data CompilationUnit = CompilationUnit (Maybe PackageDecl) [ImportDecl] [TypeDecl]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A package declaration appears within a compilation unit to indicate the package to which the compilation unit belongs.
-data PackageDecl = PackageDecl Name
-  DERIVE
+newtype PackageDecl = PackageDecl Name
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An import declaration allows a static member or a named type to be referred to by a single unqualified identifier.
 --   The first argument signals whether the declaration only imports static members.
@@ -25,7 +70,7 @@ data PackageDecl = PackageDecl Name
 --   a single name into scope.
 data ImportDecl
     = ImportDecl Bool {- static? -} Name Bool {- .*? -}
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -----------------------------------------------------------------------
 -- Declarations
@@ -34,48 +79,52 @@ data ImportDecl
 data TypeDecl
     = ClassTypeDecl ClassDecl
     | InterfaceTypeDecl InterfaceDecl
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A class declaration specifies a new named reference type.
 data ClassDecl
     = ClassDecl [Modifier] Ident [TypeParam] (Maybe RefType) [RefType] ClassBody
     | EnumDecl  [Modifier] Ident                             [RefType] EnumBody
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A class body may contain declarations of members of the class, that is,
 --   fields, classes, interfaces and methods.
 --   A class body may also contain instance initializers, static
 --   initializers, and declarations of constructors for the class.
-data ClassBody = ClassBody [Decl]
-  DERIVE
+newtype ClassBody = ClassBody [Decl]
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | The body of an enum type may contain enum constants.
 data EnumBody = EnumBody [EnumConstant] [Decl]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An enum constant defines an instance of the enum type.
 data EnumConstant = EnumConstant Ident [Argument] (Maybe ClassBody)
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An interface declaration introduces a new reference type whose members
 --   are classes, interfaces, constants and abstract methods. This type has
 --   no implementation, but otherwise unrelated classes can implement it by
 --   providing implementations for its abstract methods.
 data InterfaceDecl
-    = InterfaceDecl [Modifier] Ident [TypeParam] [RefType] InterfaceBody
-  DERIVE
+    = InterfaceDecl InterfaceKind [Modifier] Ident [TypeParam] [RefType] InterfaceBody
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
+
+-- | Interface can declare either a normal interface or an annotation
+data InterfaceKind = InterfaceNormal | InterfaceAnnotation
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | The body of an interface may declare members of the interface.
-data InterfaceBody
+newtype InterfaceBody
     = InterfaceBody [MemberDecl]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A declaration is either a member declaration, or a declaration of an
 --   initializer, which may be static.
 data Decl
     = MemberDecl MemberDecl
     | InitDecl Bool Block
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A class or interface member can be an inner class or interface, a field or
 --   constant, or a method or constructor. An interface may only have as members
@@ -84,48 +133,48 @@ data MemberDecl
     -- | The variables of a class type are introduced by field declarations.
     = FieldDecl [Modifier] Type [VarDecl]
     -- | A method declares executable code that can be invoked, passing a fixed number of values as arguments.
-    | MethodDecl      [Modifier] [TypeParam] (Maybe Type) Ident [FormalParam] [ExceptionType] MethodBody
+    | MethodDecl      [Modifier] [TypeParam] (Maybe Type) Ident [FormalParam] [ExceptionType] (Maybe Exp) MethodBody
     -- | A constructor is used in the creation of an object that is an instance of a class.
     | ConstructorDecl [Modifier] [TypeParam]              Ident [FormalParam] [ExceptionType] ConstructorBody
     -- | A member class is a class whose declaration is directly enclosed in another class or interface declaration.
     | MemberClassDecl ClassDecl
     -- | A member interface is an interface whose declaration is directly enclosed in another class or interface declaration.
     | MemberInterfaceDecl InterfaceDecl
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A declaration of a variable, which may be explicitly initialized.
 data VarDecl
     = VarDecl VarDeclId (Maybe VarInit)
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | The name of a variable in a declaration, which may be an array.
 data VarDeclId
     = VarId Ident
     | VarDeclArray VarDeclId
     -- ^ Multi-dimensional arrays are represented by nested applications of 'VarDeclArray'.
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | Explicit initializer for a variable declaration.
 data VarInit
     = InitExp Exp
     | InitArray ArrayInit
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A formal parameter in method declaration. The last parameter
 --   for a given declaration may be marked as variable arity,
 --   indicated by the boolean argument.
 data FormalParam = FormalParam [Modifier] Type Bool VarDeclId
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A method body is either a block of code that implements the method or simply a
 --   semicolon, indicating the lack of an implementation (modelled by 'Nothing').
-data MethodBody = MethodBody (Maybe Block)
-  DERIVE
+newtype MethodBody = MethodBody (Maybe Block)
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | The first statement of a constructor body may be an explicit invocation of
 --   another constructor of the same class or of the direct superclass.
 data ConstructorBody = ConstructorBody (Maybe ExplConstrInv) [BlockStmt]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An explicit constructor invocation invokes another constructor of the
 --   same class, or a constructor of the direct superclass, which may
@@ -135,7 +184,7 @@ data ExplConstrInv
     = ThisInvoke             [RefType] [Argument]
     | SuperInvoke            [RefType] [Argument]
     | PrimarySuperInvoke Exp [RefType] [Argument]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A modifier specifying properties of a given declaration. In general only
 --   a few of these modifiers are allowed for each declaration type, for instance
@@ -152,8 +201,22 @@ data Modifier
     | Volatile
     | Native
     | Annotation Annotation
-    | Synchronised
-  DERIVE
+    | Synchronized_
+  deriving (Eq,Read,Typeable,Generic,Data)
+
+instance Show Modifier where
+   show Public = "public" 
+   show Private = "private"
+   show Protected = "protected"
+   show Abstract = "abstract"
+   show Final = "final"
+   show Static = "static"
+   show StrictFP = "strictfp"
+   show Transient = "transient"
+   show Volatile = "volatile"
+   show Native = "native"
+   show (Annotation a) = show a
+   show Synchronized_ = "synchronized"
 
 -- | Annotations have three different forms: no-parameter, single-parameter or key-value pairs
 data Annotation = NormalAnnotation        { annName :: Name -- Not type because not type generics not allowed
@@ -161,7 +224,7 @@ data Annotation = NormalAnnotation        { annName :: Name -- Not type because 
                 | SingleElementAnnotation { annName :: Name
                                           , annValue:: ElementValue }
                 | MarkerAnnotation        { annName :: Name }
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 desugarAnnotation (MarkerAnnotation n)          = (n, [])
 desugarAnnotation (SingleElementAnnotation n e) = (n, [(Ident "value", e)])
@@ -171,7 +234,7 @@ desugarAnnotation' = uncurry NormalAnnotation . desugarAnnotation
 -- | Annotations may contain  annotations or (loosely) expressions
 data ElementValue = EVVal VarInit
                   | EVAnn Annotation
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -----------------------------------------------------------------------
 -- Statements
@@ -179,7 +242,7 @@ data ElementValue = EVVal VarInit
 -- | A block is a sequence of statements, local class declarations
 --   and local variable declaration statements within braces.
 data Block = Block [BlockStmt]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 
 
@@ -189,7 +252,7 @@ data BlockStmt
     = BlockStmt Stmt
     | LocalClass ClassDecl
     | LocalVars [Modifier] Type [VarDecl]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 
 -- | A Java statement.
@@ -239,37 +302,33 @@ data Stmt
     | Try Block [Catch] (Maybe {- finally -} Block)
     -- | Statements may have label prefixes.
     | Labeled Ident Stmt
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | If a value is thrown and the try statement has one or more catch clauses that can catch it, then control will be
 --   transferred to the first such catch clause.
 data Catch = Catch FormalParam Block
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A block of code labelled with a @case@ or @default@ within a @switch@ statement.
 data SwitchBlock
     = SwitchBlock SwitchLabel [BlockStmt]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A label within a @switch@ statement.
 data SwitchLabel
     -- | The expression contained in the @case@ must be a 'Lit' or an @enum@ constant.
     = SwitchCase Exp
     | Default
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | Initialization code for a basic @for@ statement.
 data ForInit
     = ForLocalVars [Modifier] Type [VarDecl]
     | ForInitExps [Exp]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An exception type has to be a class type or a type variable.
 type ExceptionType = RefType -- restricted to ClassType or TypeVariable
-
-
------------------------------------------------------------------------
--- Expressions
 
 -- | Arguments to methods and constructors are expressions.
 type Argument = Exp
@@ -290,7 +349,7 @@ data Exp
     -- | The first argument is a list of non-wildcard type arguments to a generic constructor.
     --   What follows is the type to be instantiated, the list of arguments passed to the constructor, and
     --   optionally a class body that makes the constructor result in an object of an /anonymous/ class.
-    | InstanceCreation [TypeArgument] ClassType [Argument] (Maybe ClassBody)
+    | InstanceCreation [TypeArgument] TypeDeclSpecifier [Argument] (Maybe ClassBody)
     -- | A qualified class instance creation expression enables the creation of instances of inner member classes
     --   and their anonymous subclasses.
     | QualInstanceCreation Exp [TypeArgument] Ident [Argument] (Maybe ClassBody)
@@ -339,30 +398,11 @@ data Exp
     | Cond Exp Exp Exp
     -- | Assignment of the result of an expression to a variable.
     | Assign Lhs AssignOp Exp
-  DERIVE
-
--- | A literal denotes a fixed, unchanging value.
-data Literal
-    = Int Integer
-    | Word Integer
-    | Float Double
-    | Double Double
-    | Boolean Bool
-    | Char Char
-    | String String
-    | Null
-  DERIVE
-
--- | A binary infix operator.
-data Op = Mult | Div | Rem | Add | Sub | LShift | RShift | RRShift
-        | LThan | GThan | LThanE | GThanE | Equal | NotEq
-        | And | Or | Xor | CAnd | COr
-  DERIVE
-
--- | An assignment operator.
-data AssignOp = EqualA | MultA | DivA | RemA | AddA | SubA
-              | LShiftA | RShiftA | RRShiftA | AndA | XorA | OrA
-  DERIVE
+    -- | Lambda expression
+    | Lambda LambdaParams LambdaExpression
+    -- | Method reference
+    | MethodRef Name Ident
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | The left-hand side of an assignment expression. This operand may be a named variable, such as a local
 --   variable or a field of the current object or class, or it may be a computed variable, as can result from
@@ -371,11 +411,11 @@ data Lhs
     = NameLhs Name          -- ^ Assign to a variable
     | FieldLhs FieldAccess  -- ^ Assign through a field access
     | ArrayLhs ArrayIndex   -- ^ Assign to an array
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | Array access
-data ArrayIndex = ArrayIndex Exp Exp    -- ^ Index into an array
-  DERIVE
+data ArrayIndex = ArrayIndex Exp [Exp]    -- ^ Index into an array
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | A field access expression may access a field of an object or array, a reference to which is the value
 --   of either an expression or the special keyword super.
@@ -383,7 +423,21 @@ data FieldAccess
     = PrimaryFieldAccess Exp Ident      -- ^ Accessing a field of an object or array computed from an expression.
     | SuperFieldAccess Ident            -- ^ Accessing a field of the superclass.
     | ClassFieldAccess Name Ident       -- ^ Accessing a (static) field of a named class.
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
+
+
+-- ¦ A lambda parameter can be a single parameter, or mulitple formal or mulitple inferred parameters
+data LambdaParams
+  = LambdaSingleParam Ident
+  | LambdaFormalParams [FormalParam]
+  | LambdaInferredParams [Ident]
+    deriving (Eq,Show,Read,Typeable,Generic,Data)
+
+-- | Lambda expression, starting from java 8
+data LambdaExpression
+    = LambdaExpression Exp
+    | LambdaBlock Block
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 
 -- | A method invocation expression is used to invoke a class or instance method.
@@ -398,128 +452,10 @@ data MethodInvocation
     | ClassMethodCall Name [RefType] Ident [Argument]
     -- | Invoking a method of a named type, giving arguments for any generic type parameters.
     | TypeMethodCall  Name [RefType] Ident [Argument]
-  DERIVE
+  deriving (Eq,Show,Read,Typeable,Generic,Data)
 
 -- | An array initializer may be specified in a declaration, or as part of an array creation expression, creating an
 --   array and providing some initial values
 data ArrayInit
     = ArrayInit [VarInit]
-  DERIVE
-
-
------------------------------------------------------------------------
--- Types
-
-
--- | There are two kinds of types in the Java programming language: primitive types and reference types.
-data Type
-    = PrimType PrimType
-    | RefType RefType
-  DERIVE
-
--- | There are three kinds of reference types: class types, interface types, and array types.
---   Reference types may be parameterized with type arguments.
---   Type variables cannot be syntactically distinguished from class type identifiers,
---   and are thus represented uniformly as single ident class types.
-data RefType
-    = ClassRefType ClassType
-    {- | TypeVariable Ident -}
-    | ArrayType Type
-  DERIVE
-
--- | A class or interface type consists of a type declaration specifier,
---   optionally followed by type arguments (in which case it is a parameterized type).
-data ClassType
-    = ClassType [(Ident, [TypeArgument])]
-  DERIVE
-
--- | Type arguments may be either reference types or wildcards.
-data TypeArgument
-    = Wildcard (Maybe WildcardBound)
-    | ActualType RefType
-  DERIVE
-
--- | Wildcards may be given explicit bounds, either upper (@extends@) or lower (@super@) bounds.
-data WildcardBound
-    = ExtendsBound RefType
-    | SuperBound RefType
-  DERIVE
-
--- | A primitive type is predefined by the Java programming language and named by its reserved keyword.
-data PrimType
-    = BooleanT
-    | ByteT
-    | ShortT
-    | IntT
-    | LongT
-    | CharT
-    | FloatT
-    | DoubleT
-  DERIVE
-
-
--- | A class is generic if it declares one or more type variables. These type variables are known
---   as the type parameters of the class.
-data TypeParam = TypeParam Ident [RefType]
-  DERIVE
-
-
------------------------------------------------------------------------
--- Names and identifiers
-
--- | A single identifier.
-data Ident = Ident String
-  DERIVE
-
--- | A name, i.e. a period-separated list of identifiers.
-data Name = Name [Ident]
-  DERIVE
-
-
-$(deriveNFData ''CompilationUnit)
-$(deriveNFData ''PackageDecl)
-$(deriveNFData ''ImportDecl)
-$(deriveNFData ''TypeDecl)
-$(deriveNFData ''ClassDecl)
-$(deriveNFData ''ClassBody)
-$(deriveNFData ''EnumBody)
-$(deriveNFData ''EnumConstant)
-$(deriveNFData ''InterfaceDecl)
-$(deriveNFData ''InterfaceBody)
-$(deriveNFData ''Decl)
-$(deriveNFData ''MemberDecl)
-$(deriveNFData ''VarDecl)
-$(deriveNFData ''VarDeclId)
-$(deriveNFData ''VarInit)
-$(deriveNFData ''FormalParam)
-$(deriveNFData ''MethodBody)
-$(deriveNFData ''ConstructorBody)
-$(deriveNFData ''ExplConstrInv)
-$(deriveNFData ''Modifier)
-$(deriveNFData ''Annotation)
-$(deriveNFData ''ElementValue)
-$(deriveNFData ''Block)
-$(deriveNFData ''BlockStmt)
-$(deriveNFData ''Stmt)
-$(deriveNFData ''Catch)
-$(deriveNFData ''SwitchBlock)
-$(deriveNFData ''SwitchLabel)
-$(deriveNFData ''ForInit)
-$(deriveNFData ''Exp)
-$(deriveNFData ''Literal)
-$(deriveNFData ''Op)
-$(deriveNFData ''AssignOp)
-$(deriveNFData ''Lhs)
-$(deriveNFData ''ArrayIndex)
-$(deriveNFData ''FieldAccess)
-$(deriveNFData ''MethodInvocation)
-$(deriveNFData ''ArrayInit)
-$(deriveNFData ''Type)
-$(deriveNFData ''RefType)
-$(deriveNFData ''ClassType)
-$(deriveNFData ''TypeArgument)
-$(deriveNFData ''WildcardBound)
-$(deriveNFData ''PrimType)
-$(deriveNFData ''TypeParam)
-$(deriveNFData ''Name)
-$(deriveNFData ''Ident)
+  deriving (Eq,Show,Read,Typeable,Generic,Data)

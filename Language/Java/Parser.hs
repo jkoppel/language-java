@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP #-}
 module Language.Java.Parser (
     parser,
 
@@ -19,6 +20,8 @@ module Language.Java.Parser (
     stmtExp, exp, primary, literal,
 
     ttype, primType, refType, classType, resultType,
+
+    lambdaExp, methodRef,
 
     typeParams, typeParam,
 
@@ -42,7 +45,16 @@ import Prelude hiding ( exp, catch, (>>), (>>=) )
 import qualified Prelude as P ( (>>), (>>=) )
 import Data.Maybe ( isJust, catMaybes )
 import Control.Monad ( ap )
+
+#if __GLASGOW_HASKELL__ < 707
 import Control.Applicative ( (<$>), (<$), (<*) )
+-- Since I cba to find the instance Monad m => Applicative m declaration.
+(<*>) :: Monad m => m (a -> b) -> m a -> m b
+(<*>) = ap
+infixl 4 <*>
+#else
+import Control.Applicative ( (<$>), (<$), (<*), (<*>) )
+#endif
 
 type P = Parsec [L Token] ()
 
@@ -54,11 +66,6 @@ type P = Parsec [L Token] ()
 infixr 2 >>, >>=
 -- Note also when reading that <$> is infixl 4 and thus has
 -- lower precedence than all the others (>>, >>=, and <|>).
-
--- Since I cba to find the instance Monad m => Applicative m declaration.
-(<*>) :: Monad m => m (a -> b) -> m a -> m b
-(<*>) = ap
-infixl 4 <*>
 
 ----------------------------------------------------------------------------
 -- Top-level parsing
@@ -113,7 +120,7 @@ classOrInterfaceDecl = do
     ms <- list modifier
     de <- (do cd <- classDecl
               return $ \ms -> ClassTypeDecl (cd ms)) <|>
-          (do id <- interfaceDecl
+          (do id <- annInterfaceDecl <|> interfaceDecl
               return $ \ms -> InterfaceTypeDecl (id ms))
     return $ de ms
 
@@ -145,7 +152,7 @@ enumClassDecl = do
     return $ \ms -> EnumDecl ms i imp bod
 
 classBody :: P ClassBody
-classBody = ClassBody <$> braces classBodyDecls
+classBody = ClassBody <$> braces classBodyStatements
 
 enumBody :: P EnumBody
 enumBody = braces $ do
@@ -162,12 +169,21 @@ enumConst = do
     return $ EnumConstant id as mcb
 
 enumBodyDecls :: P [Decl]
-enumBodyDecls = semiColon >> classBodyDecls
+enumBodyDecls = semiColon >> classBodyStatements
 
-classBodyDecls :: P [Decl]
-classBodyDecls = list classBodyDecl
+classBodyStatements :: P [Decl]
+classBodyStatements = catMaybes <$> list classBodyStatement
 
 -- Interface declarations
+
+annInterfaceDecl :: P (Mod InterfaceDecl)
+annInterfaceDecl = do
+    tok KW_AnnInterface
+    id  <- ident
+    tps <- lopt typeParams
+    exs <- lopt extends
+    bod <- interfaceBody
+    return $ \ms -> InterfaceDecl InterfaceAnnotation ms id tps exs bod
 
 interfaceDecl :: P (Mod InterfaceDecl)
 interfaceDecl = do
@@ -176,7 +192,7 @@ interfaceDecl = do
     tps <- lopt typeParams
     exs <- lopt extends
     bod <- interfaceBody
-    return $ \ms -> InterfaceDecl ms id tps exs bod
+    return $ \ms -> InterfaceDecl InterfaceNormal ms id tps exs bod
 
 interfaceBody :: P InterfaceBody
 interfaceBody = InterfaceBody . catMaybes <$>
@@ -184,15 +200,18 @@ interfaceBody = InterfaceBody . catMaybes <$>
 
 -- Declarations
 
-classBodyDecl :: P Decl
-classBodyDecl =
+classBodyStatement :: P (Maybe Decl)
+classBodyStatement =
     (try $ do
-        mst <- bopt (tok KW_Static)
-        blk <- block
-        return $ InitDecl mst blk) <|>
+       list1 semiColon
+       return Nothing) <|>
+    (try $ do
+       mst <- bopt (tok KW_Static)
+       blk <- block
+       return $ Just $ InitDecl mst blk) <|>
     (do ms  <- list modifier
         dec <- memberDecl
-        return $ MemberDecl (dec ms))
+        return $ Just $ MemberDecl (dec ms))
 
 memberDecl :: P (Mod MemberDecl)
 memberDecl =
@@ -200,8 +219,9 @@ memberDecl =
         cd  <- classDecl
         return $ \ms -> MemberClassDecl (cd ms)) <|>
     (try $ do
-        id  <- interfaceDecl
+        id  <- try annInterfaceDecl <|> try interfaceDecl
         return $ \ms -> MemberInterfaceDecl (id ms)) <|>
+
     try fieldDecl <|>
     try methodDecl <|>
     constrDecl
@@ -220,11 +240,12 @@ methodDecl = do
     fps <- formalParams
     thr <- lopt throws
     bod <- methodBody
-    return $ \ms -> MethodDecl ms tps rt id fps thr bod
+    return $ \ms -> MethodDecl ms tps rt id fps thr Nothing bod
 
 methodBody :: P MethodBody
 methodBody = MethodBody <$>
     (const Nothing <$> semiColon <|> Just <$> block)
+
 
 constrDecl :: P (Mod MemberDecl)
 constrDecl = do
@@ -272,7 +293,7 @@ interfaceMemberDecl :: P (Mod MemberDecl)
 interfaceMemberDecl =
     (do cd  <- classDecl
         return $ \ms -> MemberClassDecl (cd ms)) <|>
-    (do id  <- interfaceDecl
+    (do id  <- try annInterfaceDecl <|> try interfaceDecl
         return $ \ms -> MemberInterfaceDecl (id ms)) <|>
     try fieldDecl <|>
     absMethodDecl
@@ -284,8 +305,12 @@ absMethodDecl = do
     id  <- ident
     fps <- formalParams
     thr <- lopt throws
+    def <- opt defaultValue
     semiColon
-    return $ \ms -> MethodDecl ms tps rt id fps thr (MethodBody Nothing)
+    return $ \ms -> MethodDecl ms tps rt id fps thr def (MethodBody Nothing)
+
+defaultValue :: P Exp
+defaultValue = tok KW_Default >> exp
 
 throws :: P [RefType]
 throws = tok KW_Throws >> refTypeList
@@ -328,7 +353,7 @@ modifier =
     <|> tok KW_Native      >> return Native
     <|> tok KW_Transient   >> return Transient
     <|> tok KW_Volatile    >> return Volatile
-    <|> tok KW_Synchronized >> return Synchronised
+    <|> tok KW_Synchronized >> return Synchronized_
     <|> Annotation <$> annotation
 
 annotation :: P Annotation
@@ -594,8 +619,10 @@ stmtExp = try preIncDec
     <|> try postIncDec
     <|> try assignment
     -- There are sharing gains to be made by unifying these two
-    <|> try instanceCreation
-    <|> methodInvocationExp
+    <|> try methodInvocationExp
+    <|> try lambdaExp
+    <|> try methodRef
+    <|> instanceCreation
 
 preIncDec :: P Exp
 preIncDec = do
@@ -627,11 +654,11 @@ exp :: P Exp
 exp = assignExp
 
 assignExp :: P Exp
-assignExp = try assignment <|> condExp
+assignExp = try methodRef <|> try lambdaExp <|> try assignment <|> condExp
 
 condExp :: P Exp
 condExp = do
-    ie <- infixExp
+    ie <- infixCombineExp
     ces <- list condExpSuffix
     return $ foldl (\a s -> s a) ie ces
 
@@ -642,6 +669,30 @@ condExpSuffix = do
     colon
     el <- condExp
     return $ \ce -> Cond ce th el
+
+infixCombineExp :: P Exp
+infixCombineExp = do
+    ice <- infixCompareExp
+    ices <- list infixCombineExpSuffix
+    return $ foldl (\a s -> s a) ice ices
+
+infixCombineExpSuffix :: P (Exp -> Exp)
+infixCombineExpSuffix = do 
+    op <- infixCombineOp
+    ice2 <- infixCompareExp
+    return $ \ice1 -> BinOp ice1 op ice2
+    
+infixCompareExp :: P Exp 
+infixCompareExp = do 
+    ice <- infixExp
+    ices <- list infixCompareExpSuffix
+    return $ foldl (\a s -> s a) ice ices
+
+infixCompareExpSuffix :: P (Exp -> Exp)
+infixCompareExpSuffix = do 
+    op <- infixCompareOp
+    ice2 <- infixExp
+    return $ \ice1 -> BinOp ice1 op ice2
 
 infixExp :: P Exp
 infixExp = do
@@ -720,10 +771,28 @@ instanceCreationNPS :: P Exp
 instanceCreationNPS =
     do tok KW_New
        tas <- lopt typeArgs
-       ct  <- classType
+       tds <- typeDeclSpecifier
        as  <- args
        mcb <- opt classBody
-       return $ InstanceCreation tas ct as mcb
+       return $ InstanceCreation tas tds as mcb
+
+typeDeclSpecifier :: P TypeDeclSpecifier
+typeDeclSpecifier =
+    (try $ do ct <- classType
+              period
+              i <- ident
+              tok Op_LThan
+              tok Op_GThan
+              return $ TypeDeclSpecifierWithDiamond ct i Diamond
+    ) <|>
+    (try $ do i <- ident
+              tok Op_LThan
+              tok Op_GThan
+              return $ TypeDeclSpecifierUnqualifiedWithDiamond i Diamond
+    ) <|>
+    (do ct <- classType
+        return $ TypeDeclSpecifier ct
+    )
 
 instanceCreationSuffix :: P (Exp -> Exp)
 instanceCreationSuffix =
@@ -742,6 +811,23 @@ instanceCreation = try instanceCreationNPS <|> do
     case icp of
      QualInstanceCreation {} -> return icp
      _ -> fail ""
+
+
+lambdaParams :: P LambdaParams
+lambdaParams = try (LambdaSingleParam <$> ident)
+               <|> try (parens $ LambdaFormalParams <$> (seplist formalParam comma))
+               <|> (parens $ LambdaInferredParams <$> (seplist ident comma))
+
+lambdaExp :: P Exp
+lambdaExp = Lambda 
+            <$> (lambdaParams <* (tok LambdaArrow))
+            <*> ((LambdaBlock <$> (try block))
+                 <|> (LambdaExpression <$> exp))
+
+methodRef :: P Exp
+methodRef = MethodRef 
+            <$> (name <*  (tok MethodRefSep))
+            <*> ident
 
 {-
 instanceCreation =
@@ -882,12 +968,12 @@ args = parens $ seplist exp comma
 arrayAccessNPS :: P ArrayIndex
 arrayAccessNPS = do
     n <- name
-    e <- brackets exp
+    e <- list1 $ brackets exp
     return $ ArrayIndex (ExpName n) e
 
 arrayAccessSuffix :: P (Exp -> ArrayIndex)
 arrayAccessSuffix = do
-    e <- brackets exp
+    e <- list1 $ brackets exp
     return $ \ref -> ArrayIndex ref e
 
 arrayAccess = try arrayAccessNPS <|> do
@@ -917,7 +1003,7 @@ arrayCreation = do
              ds <- list1 $ brackets empty
              ai <- arrayInit
              return $ \t -> ArrayCreateInit t (length ds) ai) <|>
-         (do des <- list1 $ brackets exp
+         (do des <- list1 $ try $ brackets exp
              ds  <- list  $ brackets empty
              return $ \t -> ArrayCreate t des (length ds))
     return $ f t
@@ -965,6 +1051,22 @@ assignOp =
     (tok Op_CaretE   >> return XorA     ) <|>
     (tok Op_OrE      >> return OrA      )
 
+infixCombineOp :: P Op
+infixCombineOp = 
+    (tok Op_And     >> return And       ) <|>
+    (tok Op_Caret   >> return Xor       ) <|>
+    (tok Op_Or      >> return Or        ) <|>
+    (tok Op_AAnd    >> return CAnd      ) <|>
+    (tok Op_OOr     >> return COr       )
+
+infixCompareOp :: P Op 
+infixCompareOp = 
+    (tok Op_LThan   >> return LThan     ) <|>
+    (tok Op_GThan   >> return GThan     ) <|>                                          
+    (tok Op_LThanE  >> return LThanE    ) <|>
+    (tok Op_GThanE  >> return GThanE    ) <|>
+    (tok Op_Equals  >> return Equal     )
+
 infixOp :: P Op
 infixOp =
     (tok Op_Star    >> return Mult      ) <|>
@@ -973,19 +1075,22 @@ infixOp =
     (tok Op_Plus    >> return Add       ) <|>
     (tok Op_Minus   >> return Sub       ) <|>
     (tok Op_LShift  >> return LShift    ) <|>
-    (tok Op_RShift  >> return RShift    ) <|>
-    (tok Op_RRShift >> return RRShift   ) <|>
-    (tok Op_LThan   >> return LThan     ) <|>
-    (tok Op_GThan   >> return GThan     ) <|>
+    (try $ do
+       tok Op_GThan   
+       tok Op_GThan   
+       tok Op_GThan
+       return RRShift   ) <|>
+           
+    (try $ do
+       tok Op_GThan 
+       tok Op_GThan
+       return RShift    ) <|>
+           
+    (tok Op_GThan   >> return GThan     ) <|>                                          
     (tok Op_LThanE  >> return LThanE    ) <|>
     (tok Op_GThanE  >> return GThanE    ) <|>
     (tok Op_Equals  >> return Equal     ) <|>
-    (tok Op_BangE   >> return NotEq     ) <|>
-    (tok Op_And     >> return And       ) <|>
-    (tok Op_Caret   >> return Xor       ) <|>
-    (tok Op_Or      >> return Or        ) <|>
-    (tok Op_AAnd    >> return CAnd      ) <|>
-    (tok Op_OOr     >> return COr       )
+    (tok Op_BangE   >> return NotEq     )
 
 
 ----------------------------------------------------------------------------
