@@ -1,5 +1,10 @@
 module Language.Java.Pretty where
 
+import Numeric
+
+import Data.Char
+import Data.Word
+
 import Text.PrettyPrint
 import Text.Printf (printf)
 import Data.Char (toLower)
@@ -388,7 +393,7 @@ instance Pretty LambdaExpression where
   prettyPrec p (LambdaBlock block) = prettyPrec p block
 
 instance Pretty Literal where
-  prettyPrec p (Int i) = text (show i)
+  prettyPrec p (Int i) = if i >= 0 then text (show i) else text (showHex32Bit i)
   prettyPrec p (Word i) = text (show i) <> char 'L'
   prettyPrec p (Float f) = text (show f) <> char 'F'
   prettyPrec p (Double d) = text (show d)
@@ -632,3 +637,6 @@ escapeString c | c <= '\xFFFF' = escapeGeneral c
                    where c' = fromEnum c - 0x010000
                          lead = toEnum $ 0xD800 + c' `div` 0x0400
                          trail = toEnum $ 0xDC00 + c' `mod` 0x0400
+
+showHex32Bit :: Integer -> String
+showHex32Bit n = "0x" ++ (map toUpper (showHex (fromIntegral n :: Word32) ""))
