@@ -1,5 +1,5 @@
 Name:                   language-java
-Version:                0.2.8.1
+Version:                0.2.9
 License:                BSD3
 License-File:           LICENSE
 Author:                 Niklas Broberg
@@ -27,7 +27,6 @@ Library
                       , array >= 0.1
                       , deepseq >= 1.3
                       , pretty >= 1.0
-                      , cpphs >= 1.3
                       , parsec >= 3.0
 
   if impl(ghc < 7.6)
