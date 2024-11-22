@@ -5,6 +5,7 @@ import Numeric
 import Data.Char
 import Data.Word
 
+import Prelude hiding ((<>))
 import Text.PrettyPrint
 import Text.Printf (printf)
 import Data.Char (toLower)
